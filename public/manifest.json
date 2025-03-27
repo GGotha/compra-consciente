@@ -1,6 +1,6 @@
 {
     "manifest_version": 3,
-    "name": "Selic Saver",
+    "name": "Compra Consciente",
     "version": "1.0.0",
     "description": "Calcula quanto seu dinheiro renderia na Selic enquanto você compra",
     "action": {

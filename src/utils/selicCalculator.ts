@@ -1,7 +1,7 @@
 import { SelicCalculation } from "../types";
 
 // Simplified Selic annual rate (adjust as needed)
-const CURRENT_SELIC_RATE = 10.5; // 10.5% annual rate
+const CURRENT_SELIC_RATE = 14.25; // 14.25% annual rate
 
 /**
  * Calculate the potential returns if the money was invested in Selic

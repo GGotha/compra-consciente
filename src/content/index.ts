@@ -298,12 +298,9 @@ function showToast(element: HTMLElement, price: number): void {
       </div>
     `;
 
-    // Posicionamento relativo ao preço
-    const elementRect = element.getBoundingClientRect();
-
-    // Prefere mostrar à direita do elemento
-    toast.style.left = `${elementRect.right + window.scrollX + 10}px`;
-    toast.style.top = `${elementRect.top + window.scrollY}px`;
+    // Posicionamento inicial próximo ao cursor
+    toast.style.left = `${window.mouseX + 15}px`;
+    toast.style.top = `${window.mouseY - 10}px`;
 
     // Forçar visualização para poder medir
     toast.style.display = "block";
@@ -313,28 +310,34 @@ function showToast(element: HTMLElement, price: number): void {
     setTimeout(() => {
       const toastRect = toast.getBoundingClientRect();
 
-      // Se estiver saindo pela direita, coloca à esquerda
-      if (toastRect.right > window.innerWidth) {
-        toast.style.left = `${
-          elementRect.left + window.scrollX - toastRect.width - 10
-        }px`;
+      // Calcular a área visível da janela
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+
+      // Calcular novas posições se necessário
+      let newLeft = window.mouseX + 15;
+      let newTop = window.mouseY - 10;
+
+      // Se estiver saindo pela direita
+      if (newLeft + toastRect.width > viewportWidth) {
+        newLeft = window.mouseX - toastRect.width - 10;
       }
 
-      // Se estiver saindo por baixo, ajusta para cima
-      if (toastRect.bottom > window.innerHeight) {
-        toast.style.top = `${
-          elementRect.top +
-          window.scrollY -
-          (toastRect.bottom - window.innerHeight) -
-          10
-        }px`;
+      // Se estiver saindo por baixo - este é o problema principal
+      // Queremos que o toast fique sempre visível na área da janela
+      if (newTop + toastRect.height > viewportHeight) {
+        // Colocar acima do cursor ou no topo da janela se não couber
+        newTop = Math.max(10, window.mouseY - toastRect.height - 10);
       }
 
-      // Ultimo recurso: posiciona próximo ao mouse
-      if (toastRect.top < 0 || parseFloat(toast.style.left) < 0) {
-        toast.style.left = `${window.mouseX + window.scrollX + 15}px`;
-        toast.style.top = `${window.mouseY + window.scrollY - 10}px`;
+      // Se estiver saindo pelo topo
+      if (newTop < 10) {
+        newTop = 10;
       }
+
+      // Aplicar as novas posições, considerando apenas o viewport, não o scroll
+      toast.style.left = `${newLeft}px`;
+      toast.style.top = `${newTop}px`;
     }, 50);
 
     // Animação
