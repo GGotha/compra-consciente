@@ -751,7 +751,7 @@ function findPriceNearMouse(): number | null {
 
 // Initialize
 function init(): void {
-  console.log("Selic Saver content script initialized");
+  console.log("Compra Consciente content script initialized");
 
   // Create toast container now
   createToast();
