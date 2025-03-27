@@ -12,8 +12,10 @@ declare global {
 // Cache de elementos processados
 const processedElements = new Set<Element>();
 
-// Para rastrear o estado da tecla Alt
-let isAltPressed = false;
+// Para rastrear as teclas mestras configuradas
+let masterKeys: string[] = ["Alt"]; // Valor padrão
+// Para rastrear o estado da tecla mestra
+let isMasterKeyPressed = false;
 // Para rastrear a posição do mouse
 window.mouseX = 0;
 window.mouseY = 0;
@@ -24,9 +26,31 @@ let toastTimeout: number | null = null;
 // Elemento de preço atualmente sob hover
 let currentHoveredPrice: { element: HTMLElement; price: number } | null = null;
 // Estado atual do carrinho
-let currentCartState: CartState | null = null;
-// Flag para controlar se os preços já foram processados
-let pricesProcessed = false;
+const cartState: CartState | null = null;
+
+// Carregar as teclas mestras configuradas do storage
+function loadMasterKeys(): void {
+  try {
+    chrome.storage.sync.get(["masterKeys"], (result) => {
+      if (result.masterKeys && Array.isArray(result.masterKeys)) {
+        console.log(`Teclas mestras carregadas do storage:`, result.masterKeys);
+        masterKeys = result.masterKeys;
+      } else {
+        // Fallback para compatibilidade com versão anterior (que usava apenas masterKey)
+        chrome.storage.sync.get(["masterKey"], (result) => {
+          if (result.masterKey) {
+            console.log(
+              `Tecla mestra antiga carregada do storage: ${result.masterKey}`
+            );
+            masterKeys = [result.masterKey];
+          }
+        });
+      }
+    });
+  } catch (error) {
+    console.error("Erro ao carregar as teclas mestras:", error);
+  }
+}
 
 /**
  * Verificar se um texto contém um preço válido
@@ -53,33 +77,6 @@ function containsValidPrice(text: string): boolean {
   ];
 
   return pricePatterns.some((pattern) => pattern.test(cleanText));
-}
-
-/**
- * Encontrar o elemento pai mais próximo que contém o preço completo
- */
-function findPriceContainer(element: Node): HTMLElement | null {
-  let current = element.parentElement;
-  const maxDepth = 5;
-  let depth = 0;
-
-  while (current && depth < maxDepth) {
-    // Verifica se é um container de preço da Amazon
-    if (isAmazonPriceContainer(current)) {
-      return current as HTMLElement;
-    }
-
-    // Verifica o formato padrão
-    const text = current.textContent || "";
-    if (containsValidPrice(text)) {
-      return current as HTMLElement;
-    }
-
-    current = current.parentElement;
-    depth++;
-  }
-
-  return null;
 }
 
 /**
@@ -371,7 +368,7 @@ function hideToast(): void {
  * Exibir o indicador "Pressione Alt" quando o mouse estiver sobre um preço
  * Função vazia - removido o indicador de texto
  */
-function showSelicIndicator(x: number, y: number): void {
+function showSelicIndicator(): void {
   // Função vazia - removido o indicador "Pressione Alt"
 }
 
@@ -558,7 +555,7 @@ function registerPriceElement(element: HTMLElement, price: number): void {
     element.addEventListener("mouseenter", () => {
       currentHoveredPrice = { element, price };
 
-      if (isAltPressed) {
+      if (isMasterKeyPressed) {
         showToast(element, price);
       }
     });
@@ -582,18 +579,16 @@ function updateCartState(): void {
     0
   );
 
-  const cartState: CartState = {
+  const newCartState: CartState = {
     items,
     total,
     selicCalculation: calculateSelicReturns(total),
   };
 
-  currentCartState = cartState;
-
   // Send updated cart to background script
   chrome.runtime.sendMessage({
     type: "CART_UPDATE",
-    payload: cartState,
+    payload: newCartState,
   });
 }
 
@@ -641,20 +636,64 @@ function extractPricesFromPage(): CartItem[] {
   return items;
 }
 
-// Detectar tecla Alt e outros eventos
+// Detectar tecla mestra e outros eventos
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Alt") {
-    isAltPressed = true;
+  // Verifica se a tecla pressionada é uma das teclas mestras
+  const isKeyInMasterKeys = masterKeys.some((masterKey) => {
+    // Verificar tecla individual - para Cmd também verificar "Meta"
+    if (masterKey === e.key) return true;
+    if (masterKey === "Cmd" && e.key === "Meta") return true;
+
+    // Verificar combinação de teclas (ex: "Ctrl + S")
+    if (masterKey.includes("+")) {
+      const keyParts = masterKey.split("+").map((part) => part.trim());
+
+      // Verificar se todas as partes da combinação estão pressionadas
+      const hasAllModifiers = keyParts.every((part) => {
+        if (part === "Ctrl" && e.ctrlKey) return true;
+        if (part === "Alt" && e.altKey) return true;
+        if (part === "Shift" && e.shiftKey) return true;
+        if (part === "Cmd" && e.metaKey) return true;
+        if (part === e.key) return true;
+        return false;
+      });
+
+      return hasAllModifiers;
+    }
+
+    return false;
+  });
+
+  if (isKeyInMasterKeys) {
+    isMasterKeyPressed = true;
     hideSelicIndicator(); // Esconder o indicador
 
-    console.log("Alt pressionado - detectando preços");
+    console.log(`Tecla mestra pressionada - detectando preços`);
     processElementUnderCursor();
   }
 });
 
 document.addEventListener("keyup", (e) => {
-  if (e.key === "Alt") {
-    isAltPressed = false;
+  // Verifica se alguma das teclas mestras foi liberada
+  const keyWasInMasterKeys = masterKeys.some((masterKey) => {
+    // Verificar tecla individual
+    if (masterKey === e.key) return true;
+    if (masterKey === "Cmd" && e.key === "Meta") return true;
+
+    // Verificar se a tecla faz parte de uma combinação
+    if (masterKey.includes("+")) {
+      const keyParts = masterKey.split("+").map((part) => part.trim());
+      return (
+        keyParts.includes(e.key) ||
+        (e.key === "Meta" && keyParts.includes("Cmd"))
+      );
+    }
+
+    return false;
+  });
+
+  if (keyWasInMasterKeys) {
+    isMasterKeyPressed = false;
     hideToast();
   }
 });
@@ -663,8 +702,8 @@ document.addEventListener("mousemove", (e) => {
   window.mouseX = e.clientX;
   window.mouseY = e.clientY;
 
-  // Se Alt estiver pressionada, atualizar o popup
-  if (isAltPressed) {
+  // Se a tecla mestra estiver pressionada, atualizar o popup
+  if (isMasterKeyPressed) {
     processElementUnderCursor();
   } else {
     // Senão, verificar se deve mostrar o indicador
@@ -673,7 +712,7 @@ document.addEventListener("mousemove", (e) => {
       mouseMoveTimeout = setTimeout(() => {
         const price = findPriceNearMouse();
         if (price !== null && price > 0) {
-          showSelicIndicator(window.mouseX, window.mouseY);
+          showSelicIndicator();
         } else {
           hideSelicIndicator();
         }
@@ -753,13 +792,29 @@ function findPriceNearMouse(): number | null {
 function init(): void {
   console.log("Compra Consciente content script initialized");
 
+  // Carregar as teclas mestras configuradas
+  loadMasterKeys();
+
+  // Escutar por mudanças na configuração
+  chrome.storage.onChanged.addListener((changes) => {
+    if (changes.masterKeys) {
+      masterKeys = changes.masterKeys.newValue;
+      console.log(`Teclas mestras atualizadas para:`, masterKeys);
+    } else if (changes.masterKey) {
+      // Para compatibilidade com versão anterior
+      masterKeys = [changes.masterKey.newValue];
+      console.log(
+        `Tecla mestra (versão anterior) atualizada para: ${changes.masterKey.newValue}`
+      );
+    }
+  });
+
   // Create toast container now
   createToast();
 
   // Initial scan for prices
   setTimeout(() => {
     updateCartState();
-    pricesProcessed = true;
   }, 1000);
 
   // Set up mutation observer to detect DOM changes
